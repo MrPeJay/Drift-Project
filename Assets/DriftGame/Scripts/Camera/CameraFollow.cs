@@ -4,37 +4,31 @@ using UnityEngine;
 
 public class CameraFollow : MonoBehaviour
 {
-    [SerializeField] private GameObject objectToFollow;
+    public Transform objectToFollow;
 
     [SerializeField] private Vector3 distanceToObject;
     [SerializeField] private float maxFov;
-    [SerializeField] private float maxSideTurn;
-    [SerializeField] private int damping;
+
     private float startFov;
-
     private Camera camera;
-
     private CarController car;
-    // Start is called before the first frame update
+    private Transform parent;
+
     void Start()
     {
+        parent = transform.parent;
         car = objectToFollow.GetComponent<CarController>();
 
         camera = GetComponent<Camera>();
         startFov = camera.fieldOfView;
 
-        gameObject.transform.position = objectToFollow.transform.position + distanceToObject;
-        transform.LookAt(objectToFollow.transform.position);
+        transform.localPosition += distanceToObject;
     }
 
     void Update()
     {
-        gameObject.transform.position = objectToFollow.transform.position + distanceToObject;
-        transform.LookAt(objectToFollow.transform.position);
-        /*
-        var desiredRotQ = Quaternion.Euler(transform.eulerAngles.x, objectToFollow.transform.eulerAngles.y - 180, transform.eulerAngles.z);
-        transform.rotation = Quaternion.Lerp(transform.rotation, desiredRotQ, Time.deltaTime * damping);
-        */
+        transform.LookAt(parent.transform.position);
+
         camera.fieldOfView = Mathf.Lerp(startFov, maxFov, car.GetInverseLerpOfVelocity());
     }
 }

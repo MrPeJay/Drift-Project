@@ -6,4 +6,5 @@ using UnityEngine;
 public class CarBehaviour : ScriptableObject
 {
     public int topSpeed, acceleration, rotationSpeed, maxRotationVelocity;
+    public AudioClip carEngineSound;
 }

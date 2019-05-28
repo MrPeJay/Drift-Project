@@ -7,64 +7,240 @@ public class CarController : MonoBehaviour
     [Header("Car Behaviour Scriptable Object")]
     [SerializeField] private CarBehaviour behaviour;
 
-    [Header("Front Wheels")] [SerializeField] private List<GameObject> frontWheelsX;
-    [SerializeField] private List<GameObject> frontWheelsY;
+    [Header("Sounds")] [SerializeField] private AudioSource engineSource;
+    [SerializeField] private AudioSource tireSource;
+    [SerializeField] private float dampingSpeed;
+
+    [Header("Front Wheels")] [SerializeField] private List<Transform> frontWheelsX;
+    [SerializeField] private List<Transform> frontWheelsY;
     [SerializeField] [Range(0,1)] private float maxFrontWheelRotation = 0.4f;
     [SerializeField] private float frontWheelRotationSpeed = 100;
 
-    [Header("Back Wheels")] [SerializeField] private List<GameObject> backWheels;
+    [Header("Back Wheels")] [SerializeField] private List<Transform> backWheels;
     [SerializeField] private float backWheeRotationMultiplier = 100;
     [SerializeField] private float backWheeRotationSlipForward = 1000;
     [SerializeField] private float backWheeRotationSlipBackwards = 250;
+    [SerializeField] private float tireSpinMaxSpeed = 5f;
+
+    [Header("Drifting")] [SerializeField] private float driftValue;
+    [SerializeField] private TrailRenderer[] skidmarks;
+    [SerializeField] private ParticleSystem driftSmoke;
+    [SerializeField] private float maxDriftSmokeSize = 10;
+
+    [Header("Burnout")] [SerializeField] private int burnoutTireSpin = 2000;
+    [SerializeField] private float burnoutSmokeSize = 8;
+    private float timer;
+
+    [Header("Raycasts")] [SerializeField] private float offsetDistanceTire;
+    [SerializeField] private float offsetDistanceCar;
+
+    public bool hasCollided = false;
+
+    private bool isTurning = false;
+    private bool isUsingTorque = false;
+    private bool forward = false;
+    private bool backwards = false;
 
     private Rigidbody carBody;
 
     private IEnumerator returnWheels;
 
+    private GameManager manager;
+
     // Start is called before the first frame update
     void Start()
     {
+        manager = GameObject.FindObjectOfType<GameManager>();
+
+        engineSource.clip = behaviour.carEngineSound;
+        engineSource.Play();
+        tireSource.clip = manager.tireSqueel;
+
+        tireSource.Play();
+
         carBody = GetComponent<Rigidbody>();
+    }
+
+    private void OnDisable()
+    {
+        //Stop emmiting drift smoke
+        var emmision = driftSmoke.emission;
+        emmision.enabled = false;
+
+        //Stop emmiting skidmarks
+        foreach (var item in skidmarks)
+            item.emitting = false;
     }
 
     // Update is called once per frame
     void Update()
     {
-        if (Input.GetButton("Forward"))
+        EngineSoundUpdate();
+        TireSkidSoundUpdate();
+
+        if (CheckIfGrounded())
         {
-            AddForce(behaviour.acceleration);
-            RotateWheels(backWheeRotationSlipForward,backWheels);
+            if (Input.GetButton("Forward"))
+            {
+                AddForce(behaviour.acceleration);
+                RotateWheels(backWheeRotationSlipForward, backWheels, false);
+                forward = true;
+                isUsingTorque = true;
+            }
+            else if (Input.GetButtonUp("Forward"))
+            {
+                forward = false;
+                isUsingTorque = false;
+            }
+
+            if (Input.GetButton("Backwards"))
+            {
+                AddForce(-behaviour.acceleration);
+                backwards = true;
+                RotateWheels(-backWheeRotationSlipBackwards, backWheels, false);
+                isUsingTorque = true;
+            }
+            else if (Input.GetButtonUp("Backwards"))
+            {
+                backwards = false;
+                isUsingTorque = false;
+            }
+
+
+            if (Input.GetButton("Left"))
+            {
+                AddTorque(-behaviour.rotationSpeed);
+                RotateFrontWheels(-1);
+                isTurning = true;
+            }
+            else if (Input.GetButtonUp("Left"))
+            {
+                isTurning = false;
+            }
+
+            if (Input.GetButton("Right"))
+            {
+                AddTorque(behaviour.rotationSpeed);
+                RotateFrontWheels(1);
+                isTurning = true;
+            }
+            else if (Input.GetButtonUp("Right"))
+            {
+                isTurning = false;
+            }
         }
 
-        if (Input.GetButton("Backwards"))
+        if (!isTurning)
         {
-            AddForce(-behaviour.acceleration);
-            RotateWheels(-backWheeRotationSlipBackwards,backWheels);
+            RotateFrontWheelsBack();
         }
 
-        if (Input.GetButton("Left"))
+        ToogleSkidmarks();
+        ToogleBackWheelSkidmarks();
+
+        RotateWheels(backWheeRotationMultiplier * GetLocalVelocity(), frontWheelsX, false);
+        RotateWheels(backWheeRotationMultiplier * GetLocalVelocity(), backWheels, backwards && forward);
+    }
+
+    private void EngineSoundUpdate()
+    {
+        engineSource.pitch = Mathf.Lerp(1, 3, GetInverseLerpOfVelocity());
+    }
+
+    private void TireSkidSoundUpdate()
+    {
+        if (CheckIfDrifting())
         {
-            AddTorque(-behaviour.rotationSpeed);
-            RotateFrontWheels(-1);
+            tireSource.volume = Mathf.Lerp(tireSource.volume,Mathf.InverseLerp(0, behaviour.topSpeed,
+                Mathf.Abs((transform.forward - transform.InverseTransformDirection(carBody.velocity)).x)), dampingSpeed * Time.deltaTime);
+        }
+        else
+            tireSource.volume = Mathf.Lerp(tireSource.volume,0, dampingSpeed * Time.deltaTime);
+    }
+
+    public bool CheckIfDrifting()
+    {
+        if (CheckIfGrounded())
+            return Mathf.Abs((transform.forward - transform.InverseTransformDirection(carBody.velocity)).x) >
+                   driftValue;
+
+        return false;
+    }
+
+    public float GetDriftValue()
+    {
+        return Mathf.Abs((transform.forward - transform.InverseTransformDirection(carBody.velocity)).x);
+    }
+
+    private void ToogleSkidmarks()
+    {
+        RaycastHit hit;
+
+        if (CheckIfDrifting())
+        {
+            for (int i = 0; i < frontWheelsY.Count; i++)
+            {
+                skidmarks[i].emitting = Physics.Raycast(frontWheelsY[i].position, -Vector3.up, out hit,
+                    offsetDistanceTire);
+            }
+            for (int i = 0; i < backWheels.Count; i++)
+            {
+                skidmarks[i + 2].emitting = Physics.Raycast(backWheels[i].position, -Vector3.up, out hit,
+                    offsetDistanceTire);
+            }
+
+            ToogleDriftSmoke(true);
+        }
+        else
+        {
+            foreach (var item in skidmarks)
+                item.emitting = false;
+
+            ToogleDriftSmoke(false);
+        }
+    }
+
+    private void ToogleBackWheelSkidmarks()
+    {
+        if (GetLocalVelocity() < tireSpinMaxSpeed && isUsingTorque && CheckIfGrounded())
+        {
+            RaycastHit hit;
+
+            for (int i = 0; i < 2; i++)
+            {
+                skidmarks[i + 2].emitting = Physics.Raycast(backWheels[i].position, -Vector3.up, out hit,
+                    offsetDistanceTire);
+            }
+
+            ToogleDriftSmoke(true);
+
+            tireSource.volume = Mathf.Lerp(tireSource.volume,GetInverseLerpOfVelocity(), dampingSpeed * Time.deltaTime);
+        }
+    }
+
+    private void ToogleDriftSmoke(bool emmit)
+    {
+        var emmision = driftSmoke.emission;
+        emmision.enabled = emmit;
+
+        if (!CheckIfGrounded())
+        {
+            emmision.enabled = false;
+            return;
         }
 
-        else if (Input.GetButtonUp("Left"))
-        {
-            
-        }
+        if (!emmit) return;
 
-        if (Input.GetButton("Right"))
-        {
-            AddTorque(behaviour.rotationSpeed);
-            RotateFrontWheels(1);
-        }
-        else if (Input.GetButtonUp("Right"))
-        {
-            
-        }
+        var main = driftSmoke.main;
+        main.startSize = maxDriftSmokeSize * GetInverseLerpOfVelocity();
+    }
 
-        RotateWheels(backWheeRotationMultiplier * GetLocalVelocity(),frontWheelsX);
-        RotateWheels(backWheeRotationMultiplier * GetLocalVelocity(),backWheels);
+    private bool CheckIfGrounded()
+    {
+        RaycastHit hit;
+
+        return Physics.Raycast(transform.position + new Vector3(0,0.3f), -transform.up, out hit,
+            offsetDistanceCar);
     }
 
     private void AddForce(int speed)
@@ -79,20 +255,53 @@ public class CarController : MonoBehaviour
     {
         foreach (var tire in frontWheelsY)
         {
-            if (tire.transform.localRotation.y * direction < maxFrontWheelRotation)
+            if (tire.localRotation.y * direction < maxFrontWheelRotation)
             {
-                tire.transform.Rotate(transform.up, frontWheelRotationSpeed * Time.deltaTime *
-                                                    Mathf.Abs(carBody.angularVelocity.y) *
+                tire.Rotate(tire.up, frontWheelRotationSpeed * Time.deltaTime *
                                                     direction);
             }
         }
     }
 
-    private void RotateWheels(float multiplier, List<GameObject> wheels)
+    private void RotateFrontWheelsBack()
+    {
+        foreach (var tire in frontWheelsY)
+        {
+            if (tire.localRotation.y != 0)
+            {
+                if (tire.localRotation.y < 0)
+                {
+                    tire.Rotate(transform.up, frontWheelRotationSpeed * Time.deltaTime * GetInverseLerpOfVelocity());
+                }
+                else
+                {
+                    tire.Rotate(transform.up, frontWheelRotationSpeed * Time.deltaTime * GetInverseLerpOfVelocity() * -1);
+                }
+            }
+        }
+    }
+
+    private void RotateWheels(float multiplier, List<Transform> wheels, bool burnout)
     {
         foreach (var tire in wheels)
         {
-            tire.transform.Rotate(Time.deltaTime * multiplier * GetVelocity(),0,0);
+            if (burnout)
+            {
+                tire.Rotate(Time.deltaTime * burnoutTireSpin,0,0);
+
+                tireSource.volume = Mathf.Lerp(tireSource.volume, 1, dampingSpeed * Time.deltaTime);
+
+                timer += Time.deltaTime;
+                var main = driftSmoke.main;
+                var emission = driftSmoke.emission;
+                emission.enabled = true;
+                main.startSize = burnoutSmokeSize;
+            }
+            else
+            {
+                tire.Rotate(Time.deltaTime * multiplier * GetVelocity(), 0, 0);
+                timer = 0;
+            }
         }
     }
 
@@ -102,7 +311,7 @@ public class CarController : MonoBehaviour
 
         carBody.AddTorque(
             transform.up * rotationSpeed * Time.deltaTime *
-            Mathf.InverseLerp(0, behaviour.topSpeed, carBody.velocity.magnitude));
+            Mathf.Clamp(Mathf.InverseLerp(0, behaviour.topSpeed, carBody.velocity.magnitude),0.25f,1));
     }
 
     public float GetLocalVelocity()
@@ -122,11 +331,29 @@ public class CarController : MonoBehaviour
 
     public float GetAngularVelocity()
     {
-        return carBody.velocity.magnitude;
+        return carBody.angularVelocity.magnitude;
     }
 
     public float GetInverseLerpOfAngularVelocity()
     {
         return Mathf.InverseLerp(0, behaviour.maxRotationVelocity, GetAngularVelocity());
+    }
+
+    public float GetLocalAngularVelocity()
+    {
+        return transform.InverseTransformDirection(carBody.angularVelocity).y;
+    }
+
+    public float GetTurnDirection()
+    {
+        return Mathf.Sign(GetLocalAngularVelocity());
+    }
+
+    private void OnCollisionEnter(Collision collision)
+    {
+        if (collision.transform.tag != "Road" && collision.transform.tag != "Ground")
+        {
+            hasCollided = true;
+        }
     }
 }

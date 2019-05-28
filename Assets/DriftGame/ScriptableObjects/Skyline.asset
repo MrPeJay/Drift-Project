@@ -13,6 +13,7 @@ MonoBehaviour:
   m_Name: Skyline
   m_EditorClassIdentifier: 
   topSpeed: 20
-  acceleration: 750
-  rotationSpeed: 500
+  acceleration: 800
+  rotationSpeed: 750
   maxRotationVelocity: 3
+  carEngineSound: {fileID: 8300000, guid: 75fa27e467267c74f91f1f6f4e74ff88, type: 3}

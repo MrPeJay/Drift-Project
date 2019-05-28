@@ -3,7 +3,23 @@
 --- !u!78 &1
 TagManager:
   serializedVersion: 2
-  tags: []
+  tags:
+  - Road
+  - Ground
+  - yes
+  - race
+  - op-
+  - lap+
+  - op+
+  - back
+  - lap-
+  - select
+  - quit
+  - options
+  - 1
+  - resolu
+  - Decision
+  - Death
   layers:
   - Default
   - TransparentFX

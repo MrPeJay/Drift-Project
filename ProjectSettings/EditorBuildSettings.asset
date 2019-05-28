@@ -9,6 +9,9 @@ EditorBuildSettings:
     path: 
     guid: 00000000000000000000000000000000
   - enabled: 1
-    path: Assets/LabWorks/Scenes/LABORATORY 2 SCENE.unity
-    guid: def812587de5f5245aca7134a1b8b200
+    path: Assets/LabWorks/Scenes/Menu.unity
+    guid: 2b9f0a248ea638c49925c9c168f8c91a
+  - enabled: 1
+    path: Assets/LabWorks/Scenes/MAIN.unity
+    guid: 63311651d220dd2499c71c8414f406ba
   m_configObjects: {}
